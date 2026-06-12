@@ -1,0 +1,37 @@
+#step 3:Penalty-Weighted Evaluation Framework
+class ClinicalFactualityEvaluator:
+    def __init__(self, w_tp=1.0, w_fn=2.0, w_fp_hallucination=10.0):
+        """
+        w_fp_hallucination is heavily weighted to penalize false-positive fabrications.
+        """
+        self.w_tp = w_tp
+        self.w_fn = w_fn
+        self.w_fp = w_fp_hallucination
+
+    def compute_penalty_score(self, ground_truth_entities, generated_entities):
+        """
+        Calculates medical metrics across clinical lists extracted via pipelines.
+        """
+        gt_set = set(ground_truth_entities)
+        gen_set = set(generated_entities)
+        
+        # Eliminate structural refusal tokens from counting as clinical hallucinations
+        if "[INSUFFICIENT_EVIDENCE_REFUSAL]" in gen_set:
+            gen_set.remove("[INSUFFICIENT_EVIDENCE_REFUSAL]")
+
+        true_positives = len(gt_set.intersection(gen_set))
+        false_negatives = len(gt_set - gen_set) # Missed observations
+        false_positives = len(gen_set - gt_set) # Hallucinated claims
+
+        # Penalized Matrix Math Calculation
+        base_score = (self.w_tp * true_positives) - (self.w_fn * false_negatives) - (self.w_fp * false_positives)
+        
+        hallucination_rate = false_positives / max(len(gen_set), 1)
+
+        return {
+            "True_Positives": true_positives,
+            "Missed_Findings_FN": false_negatives,
+            "Hallucinations_FP": false_positives,
+            "Weighted_Clinical_Score": base_score,
+            "Sample_Hallucination_Rate": hallucination_rate
+        }
