@@ -1,0 +1,48 @@
+#step4: Execution Driver & Verification Engine
+if __name__ == "__main__":
+    print("Initializing Multi-Dataset Ingestion...")
+    
+    # Setup paths representing local system layout mappings
+    MOCK_IMG_DIRS = {'mimic': './mimic_dir', 'padchest': './pad_dir', 'openpath': './path_dir'}
+    for d in MOCK_IMG_DIRS.values(): os.makedirs(d, exist_ok=True)
+        
+    # Generate mock tracking catalogs to confirm pipeline health
+    pd.DataFrame({'subject_id': [101], 'study_id': [55], 'dicom_id': ['d1'], 'report_text': ['Pleural effusion detected']}).to_csv('mimic_stub.csv', index=False)
+    pd.DataFrame({'ImageID': ['p1.png'], 'PatientID': ['p_pad'], 'Report': ['Cardiomegaly'], 'LabelsLocalizer': ['[50, 60, 200, 250]']}).to_csv('pad_stub.csv', index=False)
+    with open('path_stub.json', 'w') as f: json.dump([{"image_path": "s1.png", "caption": "Carcinoma cell clusters detected.", "sample_id": "c1"}], f)
+
+    # Initialize Dataset
+    integrated_dataset = UnifiedMedicalDataset(
+        mimic_csv='mimic_stub.csv', padchest_csv='pad_stub.csv', openpath_json='path_stub.json', img_dirs=MOCK_IMG_DIRS
+    )
+    
+    print(f"Dataset successfully mounted. Parsed samples: {len(integrated_dataset)}")
+
+    # Initialize Engine Components
+    model = GroundedRefusalReportGenerator()
+    evaluator = ClinicalFactualityEvaluator()
+
+    # Simulate single iteration pass tracking over dataset stream
+    mock_batch_visual_tensors = torch.randn(1, 196, 768) # Shape: [Batch, Patches, Hidden_Dimensions]
+    
+    print("\nExecuting Evidence-Gated Generation Loop...")
+    generated_tokens, verification_log = model.generate_with_constraints(mock_batch_visual_tensors, confidence_alpha=0.90)
+
+    # Compile Grounding Evidence Logs per generated claim
+    print("\n--- GROUNDING EVIDENCE LOG ---")
+    print(json.dumps(verification_log[:3], indent=2))
+
+    # Evaluate safety metrics under strict penallty constraints
+    mock_gt_findings = ["pleural effusion", "cardiomegaly"]
+    mock_gen_findings = ["pleural effusion", "pneumothorax"] # Contains 'pneumothorax' as a hallucination
+    
+    metrics = evaluator.compute_penalty_score(mock_gt_findings, mock_gen_findings)
+    
+    print("\n--- CONSTRAINT SATISFACTION & HALLUCINATION REPORT ---")
+    for key, val in metrics.items():
+        print(f"{key.replace('_', ' ')}: {val}")
+
+    # File Cleanup cleanup operations
+    for d in MOCK_IMG_DIRS.values(): import shutil; shutil.rmtree(d)
+    os.remove('mimic_stub.csv'); os.remove('pad_stub.csv'); os.remove('path_stub.json')
+    print("\nSystem verification run successfully completed.")
